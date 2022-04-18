@@ -1037,6 +1037,8 @@ def QA_fetch_stock_block(
 
 
 def QA_fetch_stock_info(code, format='pd', collections=DATABASE.stock_info):
+    # for item in collections.find({}).limit(5):
+    #     print(item)
     code = QA_util_code_tolist(code)
     try:
         data = pd.DataFrame(
@@ -1724,6 +1726,8 @@ def QA_fetch_cryptocurrency_day(
             {"_id": 0},
             batch_size=10000
         )
+        print("end",QA_util_date_stamp(end))
+        print("start",QA_util_date_stamp(start))
         if format in ['dict', 'json']:
             return [data for data in cursor]
         for item in cursor:

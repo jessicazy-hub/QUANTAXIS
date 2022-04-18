@@ -116,6 +116,9 @@ class QA_Position():
                  ):
         if '.' in code:
             self.code = code.split('.')[1]
+            #hard code for now
+            market_type = code.split('.')[0]
+            self.market_type = MARKET_TYPE.CRYPTOCURRENCY
         else:
             self.code = code
 
@@ -605,7 +608,7 @@ class QA_Position():
                 amount + self.volume_long
             )
             # 增加今仓数量 ==> 会自动增加volume_long
-            self.volume_long_today += amount
+            self.volume_long_today = amount
             #
             self.open_cost_long += temp_cost
             self.position_cost_long += temp_cost
@@ -624,7 +627,7 @@ class QA_Position():
                         (self.volume_long-amount)/self.volume_long +amount
 
                     self.volume_long_his -= amount
-                    self.volume_long_frozen_today -= amount
+                    #self.volume_long_frozen_today -= amount
 
                     marginValue = -1*(self.position_price_long * amount)
                     
@@ -645,6 +648,7 @@ class QA_Position():
                     self.moneypresetLeft += (-marginValue + profit)
 
             else:
+                print('no available closable positions')
                 return 0, 0,0
 
         elif towards == ORDER_DIRECTION.BUY_OPEN:
@@ -793,9 +797,15 @@ class QA_Position():
                 amount * self.market_preset.get('unit_table', 1)
             self.margin_long += marginValue
             self.moneypresetLeft += (-marginValue + profit)
-        # 计算收益/成本
+        # 计算收益/成本, default commision used for crypto..
         commission= self.calc_commission( price, amount, towards)
         self.commission +=commission
+
+        # res = qapos.order_check(amount, price, towards, order_id)
+        print('account pos_update')
+        print('current pos', self.curpos)
+        print('available to close', self.close_available)
+        print("profit {} margin {} commission {}".format(profit, marginValue, commission))
         return marginValue, profit, commission
 
     def settle(self):
@@ -813,6 +823,8 @@ class QA_Position():
         return {
             'volume_long': self.volume_long,
             'volume_short': self.volume_short,
+            'volume_long_his': self.volume_long_his,
+            'volume_short_his': self.volume_short_his,
             'volume_long_frozen': self.volume_long_frozen,
             'volume_short_frozen': self.volume_short_frozen
         }
@@ -881,7 +893,8 @@ class QA_Position():
             else:
                 """卖出千 1.3 手续费+ 万 2 滑点"""
                 commission_fee = value *  0.0015
-
+        else:
+            commission_fee = trade_amount * 0.0015
         return commission_fee
 
     def loadfrommessage(self, message):

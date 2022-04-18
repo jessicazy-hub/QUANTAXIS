@@ -1032,10 +1032,9 @@ def QA_data_cryptocurrency_min_resample(min_data, type_='5min'):
     # 'loffset' in .resample() and in Grouper() is deprecated 提示
     data = min_data.resample(
         type_,
-        offest='0min',
         closed='right',
     ).apply(CONVERSION).dropna()
-    data.index = data.index + to_offset(type_)
+    data.index = data.index + to_offset(type_) + to_offset('0min')
     return data.assign(datetime=pd.to_datetime(data.index, utc=False)
                       ).set_index(['datetime',
                                    'code'])

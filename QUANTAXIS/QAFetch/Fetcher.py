@@ -38,7 +38,9 @@ from QUANTAXIS.QAData.QADataStruct import (QA_DataStruct_Future_day,
                                            QA_DataStruct_Stock_min,
                                            QA_DataStruct_Stock_realtime,
                                            QA_DataStruct_Index_day,
-                                           QA_DataStruct_Index_min)
+                                           QA_DataStruct_Index_min,
+                                           QA_DataStruct_CryptoCurrency_day,
+                                           QA_DataStruct_CryptoCurrency_min)
 from QUANTAXIS.QAFetch import QAEastMoney as QAEM
 from QUANTAXIS.QAFetch import QAQuery
 from QUANTAXIS.QAFetch import QAQuery_Advance as QAQueryAdv
@@ -46,6 +48,7 @@ from QUANTAXIS.QAFetch import QAQuery_Async as QAQueryAsync
 from QUANTAXIS.QAFetch import QATdx as QATdx
 from QUANTAXIS.QAFetch import QAThs as QAThs
 from QUANTAXIS.QAFetch import QATushare as QATushare
+from QUANTAXIS.QAFetch import QAbinance as QABin
 
 from QUANTAXIS.QAUtil.QAParameter import (DATABASE_TABLE, DATASOURCE,
                                           FREQUENCE, MARKET_TYPE,
@@ -54,11 +57,12 @@ from QUANTAXIS.QAUtil.QASql import QA_util_sql_mongo_setting
 from QUANTAXIS.QAUtil.QADate_trade import QA_util_get_next_period
 from QUANTAXIS.QAData.data_resample import QA_data_day_resample
 from QUANTAXIS.QASU import save_tdx
+from QUANTAXIS.QAUtil.QADate import QA_util_time_stamp
 import pandas as pd
 import datetime
 
 
-class QA_Fetcher():
+class QA_Fetcher:
     def __init__(self, uri='mongodb://127.0.0.1:27017/quantaxis', username='', password=''):
         """
         初始化的时候 会初始化
@@ -67,6 +71,7 @@ class QA_Fetcher():
         self.database = QA_util_sql_mongo_setting(uri).quantaxis
         self.history = {}
         self.best_ip = QATdx.select_best_ip()
+        print("tdx ip done")
 
     def change_ip(self, uri):
         self.database = QA_util_sql_mongo_setting(uri).quantaxis
@@ -136,6 +141,7 @@ def QA_quotation_adv(code, start, end=save_tdx.now_time(), frequence='1min',
         source {enum} -- 来源 QA.DATASOURCE
         output {enum} -- 输出类型 QA.OUTPUT_FORMAT 
     """
+
     if pd.Timestamp(end) > pd.Timestamp(save_tdx.now_time()):
         end = save_tdx.now_time()
     res = None
@@ -299,7 +305,84 @@ def QA_quotation_adv(code, start, end=save_tdx.now_time(), frequence='1min',
         if source == DATASOURCE.MONGO:
             #res = QAQueryAdv.QA_fetch_option_day_adv(code, start, end)
             raise NotImplementedError('CURRENT NOT FINISH THIS METHOD')
-    # print(type(res))
+
+    elif market == MARKET_TYPE.CRYPTOCURRENCY:
+        if frequence == FREQUENCE.DAY:
+            if source == DATASOURCE.AUTO or source == DATASOURCE.MONGO:
+                try:
+                    # 返回的是QA_DataStruct_Stock_day对象，为了与在线获取的数据格式保持统一，转成单索引
+                    res = QAQueryAdv.QA_fetch_cryptocurrency_day_adv(
+                        code, start, end).data
+                    start_date = res.index.get_level_values('date')[-1]
+                    end_date = pd.Timestamp(end)
+                    # suppose to fetch data from utc start day to end day = end(local end date) -1
+                    # get data from binance if not enough
+                    # not yet tested
+                    if end_date-start_date > datetime.timedelta(hours=24):
+                        if type(code)!=list: code = [code]
+                        code = [symbol.split(".")[1] for symbol in code if symbol[:7]=="BINANCE"]
+                        data_bin = QABin.QA_fetch_binance_kline(code, QA_util_time_stamp(start_date), QA_util_time_stamp(end_date), frequency = frequence,
+                                                                callback_func=None)
+                        data_bin = data_bin.rename(columns={"symbol": "code"}).drop(
+                            ['date_stamp', 'created_at', 'updated_at'], axis=1)
+                        data_bin = data_bin.assign(datetime=pd.to_datetime(data_bin['date'], utc=False)).set_index(
+                            ['date', 'code'], drop=True)
+                        res = pd.concat([res, data_bin], sort=True)
+                        res = res[~res.index.duplicated(keep='first')]
+                    res = QA_DataStruct_CryptoCurrency_day(res)
+                except:
+                    res = None
+            #implement binance one
+            if source == DATASOURCE.BINANCE:
+                res = QABin.QA_fetch_binance_kline(code,start,end,frequence,callback_func=None)
+                res = QA_DataStruct_CryptoCurrency_day(res.set_index(['date', 'code']))
+
+        elif frequence in [FREQUENCE.ONE_MIN, FREQUENCE.FIVE_MIN, FREQUENCE.FIFTEEN_MIN, FREQUENCE.THIRTY_MIN, FREQUENCE.SIXTY_MIN]:
+            if source == DATASOURCE.AUTO or source == DATASOURCE.MONGO:
+                """
+                        crypto read from local, if latest in local is more than freq to end date, read additional from binance
+                        fetch multiple/single code from local/binance directly. using local start end time to fetch [start, end]
+                        filter by timestamp and datestamp in utc
+
+                        issue:
+                        read additional from binance: 
+                        1. can’t perform resample on the result data struct if concat two frames in addition. 
+                        2. start/end for fetching additional data not individual symbol based. only based on last symbol’s latest time. 
+                """
+                try:
+                    # 返回的是QA_DataStruct_Stock_day对象，为了与在线获取的数据格式保持统一，转成单索引
+                    res = QAQueryAdv.QA_fetch_cryptocurrency_min_adv(
+                        code, start, end, frequence=frequence).data
+                    try:
+                        start_date = res.index.get_level_values('datetime')[-1]
+                    except:
+                        start_date = pd.Timestamp(start)
+                    end_date = pd.Timestamp(end)
+                    if end_date-start_date>datetime.timedelta(minutes = int(frequence[:-3])) and source==DATASOURCE.AUTO:
+                        if type(code)!=list: code = [code]
+                        code = [symbol.split(".")[1] for symbol in code if symbol[:7]=="BINANCE"]
+                        data_bin = QABin.QA_fetch_binance_kline(code, QA_util_time_stamp(start_date), QA_util_time_stamp(end_date), frequency = frequence,
+                                                                callback_func=None)
+                        # # data_tdx与从数据库获取的数据格式上做一些统一。
+                        #resample on this one has issue!!
+                        data_bin = data_bin.rename(columns={"symbol": "code"}).drop(['date_stamp','created_at','updated_at'], axis=1)
+                        data_bin = data_bin.assign(datetime=pd.to_datetime(data_bin['datetime'], utc=False)).set_index(['datetime', 'code'], drop=True)
+                        res = pd.concat([res, data_bin], sort=True)
+                        res = res[~res.index.duplicated(keep='first')]
+                        print("fetching from binance on missing data from {} to {}".format(data_bin.index.get_level_values('datetime')[0],data_bin.index.get_level_values('datetime')[-1]))
+                    res = QA_DataStruct_CryptoCurrency_min(res)
+                except:
+                    res = None
+            # implement binance one not tested yet
+            if source == DATASOURCE.BINANCE:
+                if type(code) != list: code = [code]
+                code = [symbol.split(".")[1] for symbol in code if symbol[:7] == "BINANCE"]
+                res = QABin.QA_fetch_binance_kline(code, QA_util_time_stamp(pd.Timestamp(start)), QA_util_time_stamp(pd.Timestamp(end)), frequence, callback_func=None)
+                res = QA_DataStruct_CryptoCurrency_min(res.set_index(['date', 'code']))
+        else:
+            print("unsupported QA frequency!")
+
+    #print(type(res))
 
     if output is OUTPUT_FORMAT.DATAFRAME:
         return res.data

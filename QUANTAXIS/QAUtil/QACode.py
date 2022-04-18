@@ -47,17 +47,16 @@ def QA_util_code_tostr(code):
     if isinstance(code, int):
         return "{:>06d}".format(code)
     if isinstance(code, str):
-        # 聚宽股票代码格式 '600000.XSHG'
-        # 掘金股票代码格式 'SHSE.600000'
-        # Wind股票代码格式 '600000.SH'
-        # 天软股票代码格式 'SH600000'
         if len(code) == 6:
             return code
+        # 天软股票代码格式 'SH600000'
         if len(code) == 8:
-            # 天软数据
             return code[-6:]
+        # Wind股票代码格式 '600000.SH'
         if len(code) == 9:
             return code[:6]
+        # 掘金股票代码格式 'SHSE.600000'
+        # 聚宽股票代码格式 '600000.XSHG'
         if len(code) == 11:
             if code[0] in ["S"]:
                 return code.split(".")[1]

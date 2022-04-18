@@ -22,7 +22,7 @@
 # SOFTWARE.
 
 from QUANTAXIS.QAFetch.QAQuery import QA_fetch_stock_list
-# from QUANTAXIS.QASU import crawl_eastmoney as crawl_eastmoney_file
+from QUANTAXIS.QASU import crawl_eastmoney as crawl_eastmoney_file
 from QUANTAXIS.QASU import save_tdx as stdx
 from QUANTAXIS.QASU import save_tdx_parallelism as stdx_parallelism
 from QUANTAXIS.QASU import save_tdx_file as tdx_file
@@ -34,8 +34,8 @@ from QUANTAXIS.QAUtil import DATABASE, print_used_time
 import time
 
 
-# from QUANTAXIS.QASU import crawl_jrj_financial_reportdate as save_financial_calendar
-# from QUANTAXIS.QASU import crawl_jrj_stock_divyield as save_stock_divyield
+from QUANTAXIS.QASU import crawl_jrj_financial_reportdate as save_financial_calendar
+from QUANTAXIS.QASU import crawl_jrj_stock_divyield as save_stock_divyield
 
 
 def QA_SU_save_stock_info(engine, client=DATABASE):
@@ -47,7 +47,6 @@ def QA_SU_save_stock_info(engine, client=DATABASE):
     Keyword Arguments:
         client {[type]} -- [description] (default: {DATABASE})
     """
-
     engine = select_save_engine(engine)
     engine.QA_SU_save_stock_info(client=client)
 
@@ -206,7 +205,7 @@ def QA_SU_save_future_min_all(engine, client=DATABASE):
 
 
 @print_used_time
-def QA_SU_save_stock_day(engine, client=DATABASE, paralleled=False):
+def QA_SU_save_stock_day(engine, client=DATABASE, paralleled=False, code=''):
     """save stock_day
 
     Arguments:
@@ -219,7 +218,7 @@ def QA_SU_save_stock_day(engine, client=DATABASE, paralleled=False):
     """
 
     engine = select_save_engine(engine, paralleled=paralleled)
-    engine.QA_SU_save_stock_day(client=client)
+    engine.QA_SU_save_stock_day(client=client, code=code)
 
 
 def QA_SU_save_single_stock_day(code, engine, client=DATABASE, paralleled=False):

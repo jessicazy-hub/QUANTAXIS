@@ -81,6 +81,15 @@ Binance2QA_FREQUENCY_DICT = {
     "1h": '60min',
     "1d": 'day',
 }
+
+QA2Binance_FREQUENCY_DICT = {
+    '1min':"1m",
+    '5min':"5m",
+    '15min':"15m",
+    '30min':"30m",
+    '60min':"1h",
+    'day':"1d",
+}
 """
 binance 只允许一次获取 500bar，时间请求超过范围则只返回最新500条
 """
@@ -112,19 +121,20 @@ def format_binance_data_fields(datas, symbol, frequency):
         lambda x: int(x['start_time'] / 1000),
         axis=1
     )
-    frame['date'] = pd.to_datetime(
-        frame['start_time'],
-        unit='s'
-    , utc=False)
+    # frame['date'] = pd.to_datetime(
+    #     frame['start_time'],
+    #     unit='s'
+    # , utc=False)
+    frame['date'] = frame['start_time'].apply(datetime.datetime.fromtimestamp)
     frame['date'] = frame['date'].dt.strftime('%Y-%m-%d')
-    frame['datetime'] = pd.to_datetime(
-        frame['start_time'],
-        unit='s'
-    , utc=False)
+    # frame['datetime'] = pd.to_datetime(
+    #     frame['start_time'],
+    #     unit='s'
+    # , utc=False)
+    frame['datetime'] = frame['start_time'].apply(datetime.datetime.fromtimestamp)
     frame['datetime'] = frame['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
     # GMT+0 String 转换为 UTC Timestamp
-    frame['date_stamp'] = pd.to_datetime(frame['date']
-                                        ).astype(np.int64) // 10**9
+    frame['date_stamp'] = pd.to_datetime(pd.to_datetime(frame['start_time'], unit='s').dt.strftime('%Y-%m-%d')).astype(np.int64) // 10**9
     frame['created_at'] = int(
         time.mktime(datetime.datetime.now().utctimetuple())
     )
@@ -233,7 +243,7 @@ def QA_fetch_binance_kline_with_auto_retry(
 
 
 def QA_fetch_binance_kline(
-    symbol,
+    symbols,
     start_time,
     end_time,
     frequency,
@@ -246,61 +256,74 @@ def QA_fetch_binance_kline(
     火币和binance，OKEx 均为如此，直接用跨年时间去直接请求上万bar 的 kline 数据永远只返回最近200条数据。
     """
     datas = list()
+    frame = pd.DataFrame()
     reqParams = {}
-    reqParams['from'] = end_time - FREQUENCY_SHIFTING[frequency]
-    reqParams['to'] = end_time
+    #handle both QA and binance frequency.
+    if (frequency[-3:]=="min" or frequency=="day"): frequency = QA2Binance_FREQUENCY_DICT[frequency]
+    if (type(symbols)) is not list: symbols = [symbols]
 
-    while (reqParams['to'] > start_time):
-        if ((reqParams['from'] > QA_util_datetime_to_Unix_timestamp())) or \
-            ((reqParams['from'] > reqParams['to'])):
-            # 出现“未来”时间，一般是默认时区设置，或者时间窗口滚动前移错误造成的
-            QA_util_log_info(
-                'A unexpected \'Future\' timestamp got, Please check self.missing_data_list_func param \'tzlocalize\' set. More info: {:s}@{:s} at {:s} but current time is {}'
-                .format(
-                    symbol,
-                    frequency,
-                    QA_util_print_timestamp(reqParams['from']),
-                    QA_util_print_timestamp(
-                        QA_util_datetime_to_Unix_timestamp()
+    for symbol in symbols:
+        reqParams['from'] = end_time - FREQUENCY_SHIFTING[frequency]
+        reqParams['to'] = end_time
+        last_done = False
+
+        while not last_done:
+            if ((reqParams['from'] > QA_util_datetime_to_Unix_timestamp())) or \
+                ((reqParams['from'] > reqParams['to'])):
+                # 出现“未来”时间，一般是默认时区设置，或者时间窗口滚动前移错误造成的
+                QA_util_log_info(
+                    'A unexpected \'Future\' timestamp got, Please check self.missing_data_list_func param \'tzlocalize\' set. More info: {:s}@{:s} at {:s} but current time is {}'
+                    .format(
+                        symbol,
+                        frequency,
+                        QA_util_print_timestamp(reqParams['from']),
+                        QA_util_print_timestamp(
+                            QA_util_datetime_to_Unix_timestamp()
+                        )
                     )
                 )
+                # 跳到下一个时间段
+                reqParams['to'] = int(reqParams['from'] - 1)
+                reqParams['from'] = int(reqParams['from'] - FREQUENCY_SHIFTING[frequency])
+                continue
+
+            if (reqParams['from']<start_time):
+                reqParams["from"] = start_time
+                last_done = True
+
+            klines = QA_fetch_binance_kline_with_auto_retry(
+                symbol,
+                reqParams['from'],
+                reqParams['to'],
+                frequency,
             )
-            # 跳到下一个时间段
+            if (klines is None) or \
+                (len(klines) == 0) or \
+                ('error' in klines):
+                # 出错放弃
+                break
+
+            #for callback bars
             reqParams['to'] = int(reqParams['from'] - 1)
             reqParams['from'] = int(reqParams['from'] - FREQUENCY_SHIFTING[frequency])
-            continue
+            if (klines is None) or \
+                ((len(datas) > 0) and (klines[-1][0] == datas[-1][0])):
+                # 没有更多数据
+                break
 
-        klines = QA_fetch_binance_kline_with_auto_retry(
-            symbol,
-            reqParams['from'],
-            reqParams['to'],
-            frequency,
-        )
-        if (klines is None) or \
-            (len(klines) == 0) or \
-            ('error' in klines):
-            # 出错放弃
-            break
+            datas.extend(klines)
 
-        reqParams['to'] = int(reqParams['from'] - 1)
-        reqParams['from'] = int(reqParams['from'] - FREQUENCY_SHIFTING[frequency])
+            if (callback_func is not None):
+                frame = format_binance_data_fields(klines, symbol, frequency)
+                callback_func(frame, Binance2QA_FREQUENCY_DICT[frequency])
 
-        if (klines is None) or \
-            ((len(datas) > 0) and (klines[-1][0] == datas[-1][0])):
-            # 没有更多数据
-            break
+        if len(datas) == 0:
+            return None
+        # 归一化数据字段，转换填充必须字段，删除多余字段
+        frame = pd.concat([frame, format_binance_data_fields(datas, symbol, frequency)])
 
-        datas.extend(klines)
-
-        if (callback_func is not None):
-            frame = format_binance_data_fields(klines, symbol, frequency)
-            callback_func(frame, Binance2QA_FREQUENCY_DICT[frequency])
-
-    if len(datas) == 0:
-        return None
-
-    # 归一化数据字段，转换填充必须字段，删除多余字段
-    frame = format_binance_data_fields(datas, symbol, frequency)
+    frame.sort_values(by=["symbol","time_stamp"], inplace=True)
+    frame = frame.reset_index(drop=True)
     return frame
 
 
@@ -373,10 +396,12 @@ if __name__ == '__main__':
     # print(a.content)
     # print(json.loads(a.content))
     import pytz
+    import QUANTAXIS as QA
     from dateutil.tz import *
 
     tz = pytz.timezone("Asia/Shanghai")
     url = urljoin(Binance_base_url, "/api/v1/klines")
+    #start and end are local time here.
     start = time.mktime(
         datetime.datetime(2018,
                           6,
@@ -391,7 +416,15 @@ if __name__ == '__main__':
     )
     print(start * 1000)
     print(end * 1000)
-    data = QA_fetch_binance_kline("ETHBTC", start, end, '1d')
+    data = QA_fetch_binance_kline(["ETHBTC","LTCBTC"], start, end, '5min')
+    data2 = data.rename(columns={"symbol": "code"})
+    data2 = data2.assign(datetime=pd.to_datetime(data2['datetime'], utc=False)
+                         ).set_index(['datetime','code'],drop=True)
+    data2 = QA.QA_DataStruct_CryptoCurrency_min(data2)
+    print(data2.data)
+    data3 = QA.QA_DataStruct_CryptoCurrency_min(data2.resample('4h')).data
+    print(data3)
+    print(data)
     print(len(data))
-    print(data[0])
-    print(data[-1])
+    print(data.loc[0])
+    print(data.iloc[-1])

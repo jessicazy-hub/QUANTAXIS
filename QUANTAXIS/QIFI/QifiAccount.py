@@ -12,7 +12,9 @@ from QUANTAXIS.QAMarket.market_preset import MARKET_PRESET
 from QUANTAXIS.QAMarket.QAOrder import ORDER_DIRECTION
 from QUANTAXIS.QAMarket.QAPosition import QA_Position
 import clickhouse_driver
-
+from QUANTAXIS.QAUtil.QAParameter import (DATABASE_TABLE, DATASOURCE,
+                                          FREQUENCE, MARKET_TYPE,
+                                          OUTPUT_FORMAT)
 
 def parse_orderdirection(od):
     direction = ''
@@ -430,7 +432,7 @@ class QIFI_Account():
             traceback.print_exc()
 
     def settle(self):
-        self.log('settle')
+        #self.log('settle')
         self.sync()
 
         self.pre_balance += (self.deposit - self.withdraw + self.close_profit)
@@ -453,6 +455,7 @@ class QIFI_Account():
             item.settle()
 
         # sell first >> second buy ==> for make sure have enough cash
+        # not sure what this is doing
         buy_order_sche = []
         for order in self.schedule.values():
             if order['towards'] > 0:
@@ -476,7 +479,11 @@ class QIFI_Account():
     @property
     def dtstr(self):
         if self.model == "BACKTEST":
-            return self.datetime.replace('.', '_')
+            try:
+                time = self.datetime.replace('.', '_')
+                return time
+            except:
+                return self.datetime
         else:
             return str(datetime.datetime.now()).replace('.', '_')
 
@@ -726,9 +733,9 @@ class QIFI_Account():
         qapos = self.get_position(code)
 
         #res = qapos.order_check(amount, price, towards, order_id)
-        print('account order_check')
-        self.log(qapos.curpos)
-        self.log(qapos.close_available)
+        # print('account order_check')
+        # self.log(qapos.curpos)
+        # self.log(qapos.close_available)
         if towards == ORDER_DIRECTION.BUY_CLOSE:
             # self.log("buyclose")
             # self.log(self.volume_short - self.volume_short_frozen)
@@ -763,12 +770,14 @@ class QIFI_Account():
             """
             only for stock
             """
-            if (qapos.volume_long_his - qapos.volume_long_frozen_today) >= amount:
+            if qapos.market_type==MARKET_TYPE.STOCK_CN:
+                if (qapos.volume_long_his - qapos.volume_long_frozen_today) >= amount:
 
-                qapos.volume_long_frozen_today += amount
-                return True
-            else:
-                print('SELLCLOSE 今日仓位不足')
+                    qapos.volume_long_frozen_today += amount
+                    return True
+                else:
+                    print('SELLCLOSE 今日仓位不足')
+            return True
         elif towards == ORDER_DIRECTION.SELL_CLOSETODAY:
             if (qapos.volume_long_today - qapos.volume_long_frozen_today) >= amount:
                 # self.log("sellclosetoday")
@@ -785,11 +794,13 @@ class QIFI_Account():
             """
             冻结的保证金
             """
-            coeff = float(price) * float(
-                self.market_preset.get_code(code).get("unit_table",
-                                                      1)
-            ) * float(self.market_preset.get_code(code).get("buy_frozen_coeff",
-                                                            1))
+            coeff = 0
+            if(qapos.market_type == MARKET_TYPE.FUTURE_CN):
+                coeff = float(price) * float(
+                    self.market_preset.get_code(code).get("unit_table",
+                                                          1)
+                ) * float(self.market_preset.get_code(code).get("buy_frozen_coeff",
+                                                                1))
             moneyneed = coeff * amount
             if self.available > moneyneed:
                 self.money -= moneyneed
@@ -933,8 +944,6 @@ class QIFI_Account():
             trade_id = str(uuid.uuid4()) if trade_id is None else trade_id
 
             # update accounts
-            print('update trade')
-
             margin, close_profit, commission = self.get_position(code).update_pos(
                 trade_price, trade_amount, trade_towards)
             self.trades[trade_id] = {
@@ -953,9 +962,10 @@ class QIFI_Account():
                 "commission": commission,
                 "trade_date_time": self.transform_dt(trade_time)}
 
-            self.money -= (margin - close_profit)
+            #close_profit is just profit from closing positions. self.close_profit involes commission
+            self.money -= (margin - close_profit + commission)
             self.close_profit += (close_profit - commission)
-
+            print("cumulative money {}, current time's closeProfit {}".format(self.money, self.close_profit))
             pos = self.get_position(code)
             if pos.volume_long == 0 and pos.volume_short == 0:
                 self.positions.pop(self.format_code(code))
@@ -999,7 +1009,7 @@ class QIFI_Account():
 
         if code in self.positions.keys():
             try:
-                pos = self.get_position(code.split('.')[1])
+                pos = self.get_position(code)
                 if pos.last_price == price:
                     pass
                 else:
@@ -1011,7 +1021,11 @@ class QIFI_Account():
 
                 self.log(e)
 
-        if datetime:
+        if datetime and self.datetime != datetime:
+            if code in self.positions.keys():
+                pos = self.get_position(code)
+                pos.volume_long_his += pos.volume_long_today
+                pos.volume_long_today = 0
             self.datetime = datetime
 
     def order_schedule(self, code: str, amount: float, price: float, towards: int, order_id: str = ''):

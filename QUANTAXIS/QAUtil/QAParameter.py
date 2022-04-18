@@ -414,6 +414,7 @@ class DATASOURCE():
     CCXT = 'ccxt'  # github/ccxt 虚拟货币
     LOCALFILE = 'localfile'  # 本地文件
     AUTO = 'auto'  # 优先从Mongodb中读取数据，不足的数据从tdx下载
+    BINANCE = 'binance'
 
 
 class OUTPUT_FORMAT():

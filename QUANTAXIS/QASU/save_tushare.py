@@ -191,7 +191,7 @@ def QA_SU_save_trade_date_all(client=DATABASE):
 
 
 def QA_SU_save_stock_info(client=DATABASE):
-    data = QA_fetch_get_stock_info('')
+    data = QA_fetch_get_stock_info('').rename(columns = {'symbol':'code'})
     client.drop_collection('stock_info')
     coll = client.stock_info
     coll.create_index('code')
@@ -338,7 +338,7 @@ def _saving_work(code, coll_stock_day, ui_log=None, err=[]):
                             ),
                             end_date,
                             'bfq'
-                        )
+                        ).rename(columns = {'symbol':'code'})
                     )
                 )
 
@@ -368,7 +368,7 @@ def _saving_work(code, coll_stock_day, ui_log=None, err=[]):
         err.append(str(code))
 
 
-def QA_SU_save_stock_day(client=DATABASE, ui_log=None, ui_progress=None):
+def QA_SU_save_stock_day(client=DATABASE, ui_log=None, ui_progress=None, code=''):
     '''
      save stock_day
     保存日线数据
@@ -377,9 +377,9 @@ def QA_SU_save_stock_day(client=DATABASE, ui_log=None, ui_progress=None):
     :param ui_progress: 给GUI qt 界面使用
     :param ui_progress_int_value: 给GUI qt 界面使用
     '''
-    stock_list = QA_fetch_get_stock_list()
+    stock_list = QA_fetch_get_stock_list() if code=='' else code
     # TODO: 重命名stock_day_ts
-    coll_stock_day = client.stock_day_ts
+    coll_stock_day = client.stock_day
     coll_stock_day.create_index(
         [("code",
           pymongo.ASCENDING),

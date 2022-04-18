@@ -1035,20 +1035,23 @@ if __name__ == '__main__':
     from QUANTAXIS.QAFetch.QAhuobi import FIRST_PRIORITY
     import QUANTAXIS as QA
     codelist = ['BINANCE.BCHUSDT', 'BINANCE.BSVUSDT', 'BINANCE.BTCUSDT', 'BINANCE.EOSUSDT', 'BINANCE.ETHUSDT', 'BINANCE.ETCUSDT', 'BINANCE.DASHUSDT', 'BINANCE.LTCUSDT', 'BINANCE.XMRUSDT', 'BINANCE.XRPUSDT', 'BINANCE.ZECUSDT']
-    data1 = QA_fetch_cryptocurrency_day_adv(
-            code=codelist+['HUOBI.{}'.format(code) for code in FIRST_PRIORITY],
-            start='2019-08-21',
-            end='2020-05-28 18:10:00',
-        )
-    print(data1.data)
+    test = ["BINANCE.ETHBTC"]
+    # data1 = QA_fetch_cryptocurrency_day_adv(
+    #         #code=codelist+['HUOBI.{}'.format(code) for code in FIRST_PRIORITY],
+    #         code=test,
+    #         start='2019-08-21',
+    #         end='2020-05-28 18:10:00',
+    #     )
+    # print(data1.data)
     data2 = QA_fetch_cryptocurrency_min_adv(
-            code=[
-                'OKEX.BTC-USDT',
-                'OKEX.ETH-USDT',
-            ],
+            # code=[
+            #     'OKEX.BTC-USDT',
+            #     'OKEX.ETH-USDT',
+            # ],
+            code=test,
             start='2017-10-01',
             end='2020-05-28 18:10:00',
-            frequence='60min'
+            frequence='5min'
         )
     print(data2.data)
     data_4h = QA.QA_DataStruct_CryptoCurrency_min(data2.resample('4h'))

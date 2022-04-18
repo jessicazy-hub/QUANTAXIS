@@ -35,7 +35,7 @@ from QUANTAXIS.QAUtil import (
 )
 
 
-def set_token(token=None):
+def set_token(token='56a50771ec3da5948e191661e0f6822cfbbf24cb466fa412f91d3152'):
     try:
         if token is None:
             # 从~/.quantaxis/setting/config.ini中读取配置
@@ -178,7 +178,9 @@ def QA_fetch_get_stock_realtime():
 
 
 def QA_fetch_get_stock_info(name):
-    data = ts.get_stock_basics()
+    pro = get_pro()
+    #data = ts.get_stock_basics()
+    data = pro.stock_basic()
     try:
         return data if name == '' else data.loc[name]
     except:
